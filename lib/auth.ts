@@ -63,7 +63,7 @@ export async function signIn(email: string, password: string) {
 
 
 
-export async function signUp(email: string, password: string, name: string, role: 'PATIENT' | 'CAREGIVER' | 'DOCTOR') {
+export async function signUp(email: string, password: string, name: string, role: 'PATIENT' | 'CAREGIVER' | 'DOCTOR', phone?: string) {
   if (!isSupabaseConfigured) throw new Error('Supabase not configured');
   const supabase = createBrowserSupabaseClient();
   
@@ -76,6 +76,7 @@ export async function signUp(email: string, password: string, name: string, role
     user_id: data.user.id,
     name,
     role,
+    phone: phone || null,
     streak: 0,
     streak_history: [false, false, false, false, false, false, false],
   });

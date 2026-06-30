@@ -24,6 +24,7 @@ const navItems = [
 
 export function BottomNav() {
   const pathname = usePathname();
+  if (pathname === "/login") return null;
 
   return (
     <nav className="bottom-nav">

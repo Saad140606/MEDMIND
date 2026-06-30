@@ -207,3 +207,8 @@ html, body {
 .animate-slide-up { animation: slide-up 0.4s ease forwards; }
 .animate-blink { animation: blink 1.2s ease infinite; }
 .animate-spin { animation: spin 1.5s linear infinite; }
+
+/* Custom utility to override container spacing inside login layouts */
+body:has(.login-page-container) main {
+  padding-bottom: 0 !important;
+}

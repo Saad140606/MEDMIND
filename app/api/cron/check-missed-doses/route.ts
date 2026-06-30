@@ -1,6 +1,6 @@
 // Scheduled automated job scans patient schedules, identifies overdue doses, and alerts connected caregivers.
 import { NextResponse } from 'next/server';
-import { isSupabaseConfigured, supabase } from '../../../../lib/supabaseClient';
+import { isSupabaseAdminConfigured, supabaseAdmin } from '../../../../lib/supabaseAdmin';
 import { getMedicationStatus } from '../../../../lib/db';
 
 
@@ -13,16 +13,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  if (!isSupabaseConfigured || !supabase) {
-    return NextResponse.json({ message: 'Supabase not configured — skipping cron' });
+  if (!isSupabaseAdminConfigured || !supabaseAdmin) {
+    return NextResponse.json({ error: 'Supabase Service Role Key unconfigured — skipping cron' }, { status: 500 });
   }
+
+  // Use the administrative client to bypass RLS restrictions since this cron job runs as an internal system worker.
+  const client = supabaseAdmin;
 
   const todayStr = new Date().toISOString().split('T')[0];
   let notificationsCreated = 0;
 
   try {
     
-    const { data: patients, error: pError } = await supabase
+    const { data: patients, error: pError } = await client
       .from('profiles')
       .select('id, name')
       .eq('role', 'PATIENT');
@@ -35,8 +38,8 @@ export async function GET(request: Request) {
     for (const patient of patients) {
       // Parallelize medication list and completed logs fetches for each patient.
       const [{ data: meds }, { data: logs }] = await Promise.all([
-        supabase.from('medications').select('*').eq('profile_id', patient.id),
-        supabase.from('dose_logs').select('medication_id').eq('profile_id', patient.id).eq('date_string', todayStr),
+        client.from('medications').select('*').eq('profile_id', patient.id),
+        client.from('dose_logs').select('medication_id').eq('profile_id', patient.id).eq('date_string', todayStr),
       ]);
 
       const medications = meds || [];
@@ -66,7 +69,8 @@ export async function GET(request: Request) {
       if (missedMeds.length === 0) continue;
 
       
-      const { data: caregiverLinks } = await supabase
+      // Query all caregivers connected to this patient to check where to route alerts.
+      const { data: caregiverLinks } = await client
         .from('caregiver_patient')
         .select('caregiver_id')
         .eq('patient_id', patient.id)
@@ -79,7 +83,7 @@ export async function GET(request: Request) {
         for (const link of caregiverLinks) {
           
           // Prevent notification spam: query database to verify that this missed dose alert has not already been generated today.
-          const { data: existing } = await supabase
+          const { data: existing } = await client
             .from('notifications')
             .select('id')
             .eq('recipient_profile_id', link.caregiver_id)
@@ -89,7 +93,7 @@ export async function GET(request: Request) {
 
           if (existing) continue; 
 
-          await supabase.from('notifications').insert({
+          await client.from('notifications').insert({
             recipient_profile_id: link.caregiver_id,
             type: 'MISSED_DOSE',
             payload: {

@@ -227,3 +227,22 @@ CREATE POLICY "Users can update own notifications" ON public.notifications
 -- Allow inserts by authenticated users to enable cron checking engines to issue patient alerts using default client APIs.
 CREATE POLICY "Authenticated can insert notifications" ON public.notifications
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+
+-- ─────────────────────────────────────────────
+-- 8. Profile Search RPC by Email (SECURITY DEFINER to read auth.users)
+-- ─────────────────────────────────────────────
+-- Database function to resolve and retrieve public profiles associated with a given email address.
+-- This function runs with SECURITY DEFINER to securely read from the protected auth.users schema table.
+CREATE OR REPLACE FUNCTION public.get_profile_by_email(p_email TEXT)
+RETURNS SETOF public.profiles
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT p.*
+  FROM public.profiles p
+  JOIN auth.users u ON p.user_id = u.id
+  WHERE u.email = p_email;
+END;
+$$ LANGUAGE plpgsql;

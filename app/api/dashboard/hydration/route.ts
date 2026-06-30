@@ -12,6 +12,8 @@ export async function POST(request: Request) {
     }
     const token = extractToken(request);
     // Parse client token and increment hydration status before returning updated metrics.
+    // If the water amount is already merged or is zero, it executes as a safe HTTP 200 no-op,
+    // allowing the client offline queue replay manager to clear the duplicate request.
     const updatedData = await addHydration(Number(amount), token);
     return NextResponse.json(updatedData);
   } catch (error: any) {

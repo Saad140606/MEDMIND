@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<Role>("PATIENT");
+  const [phone, setPhone] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +37,7 @@ export default function LoginPage() {
       } else {
         if (!name.trim()) throw new Error("Name is required");
         // Create auth registration and trigger automated seeding for the chosen profile role.
-        await signUp(email, password, name.trim(), role);
+        await signUp(email, password, name.trim(), role, phone.trim() || undefined);
         setSuccess("Account created! Check your email to confirm, then log in.");
         setMode("login");
       }
@@ -54,7 +55,7 @@ export default function LoginPage() {
   ];
 
   return (
-    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", padding: "24px 20px", position: "relative", overflow: "hidden" }}>
+    <div className="login-page-container" style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", padding: "24px 20px", position: "relative", overflow: "hidden" }}>
       {}
       <div style={{ position: "absolute", top: -80, left: "50%", transform: "translateX(-50%)", width: 300, height: 300, background: "radial-gradient(circle, rgba(57,255,158,0.08) 0%, transparent 70%)", pointerEvents: "none" }} />
 
@@ -97,17 +98,29 @@ export default function LoginPage() {
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
         {mode === "signup" && (
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>FULL NAME</label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Ahmed Hassan"
-              required
-              style={{ width: "100%", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", color: "var(--text-primary)", fontSize: 15, outline: "none" }}
-            />
-          </div>
+          <>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>FULL NAME</label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Ahmed Hassan"
+                required
+                style={{ width: "100%", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", color: "var(--text-primary)", fontSize: 15, outline: "none" }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 6 }}>PHONE NUMBER (OPTIONAL)</label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="+1 555-0199"
+                style={{ width: "100%", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", color: "var(--text-primary)", fontSize: 15, outline: "none" }}
+              />
+            </div>
+          </>
         )}
 
         <div>

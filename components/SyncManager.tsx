@@ -102,6 +102,7 @@ export async function replayQueue(): Promise<{ replayed: number; failed: number 
         });
 
         if (response.ok) {
+          // Standard HTTP 200/201 success paths, or duplicate no-ops returned as 200, successfully clear the item.
           await clearQueuedAction(action.id);
           replayed++;
         } else if (response.status === 409) {
