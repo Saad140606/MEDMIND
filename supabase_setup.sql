@@ -1,4 +1,4 @@
--- MedMind Database Setup Script
+-- Initializes database tables, indexes, row-level security policies, and seed data for MedMind's local/remote environments.
 -- Execute this script in your Supabase SQL Editor (https://supabase.com)
 
 -- 1. Drop existing tables if they exist (in reverse dependency order)
@@ -59,7 +59,7 @@ CREATE INDEX idx_dose_logs_date ON public.dose_logs(date_string);
 CREATE INDEX idx_medications_profile ON public.medications(profile_id);
 CREATE INDEX idx_dose_logs_medication ON public.dose_logs(medication_id);
 
--- 8. Enable Row Level Security (RLS)
+-- 8. Enable Row Level Security (RLS) to secure database tables from unauthorized endpoints.
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.medications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.hydration ENABLE ROW LEVEL SECURITY;
@@ -68,7 +68,7 @@ ALTER TABLE public.dose_logs ENABLE ROW LEVEL SECURITY;
 
 -- 9. Create RLS Policies for Development (Public CRUD Access)
 -- Note: In a production environment, restrict these using auth.uid() checks.
--- For local prototyping and testing, we permit public access via anon key.
+-- Permit public access via standard Supabase anon keys during local prototyping and testing.
 
 CREATE POLICY "Allow public select on profiles" ON public.profiles FOR SELECT USING (true);
 CREATE POLICY "Allow public insert on profiles" ON public.profiles FOR INSERT WITH CHECK (true);
@@ -91,7 +91,7 @@ CREATE POLICY "Allow public select on dose_logs" ON public.dose_logs FOR SELECT 
 CREATE POLICY "Allow public insert on dose_logs" ON public.dose_logs FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public delete on dose_logs" ON public.dose_logs FOR DELETE USING (true);
 
--- 10. Seed Initial Data for Demo Patient (Ahmed)
+-- 10. Seed Initial Data for Demo Patient (Ahmed) using an anonymous PL/pgSQL block to capture reference IDs.
 DO $$
 DECLARE
     new_profile_id UUID;

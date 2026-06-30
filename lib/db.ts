@@ -1,6 +1,9 @@
+// Primary data access layer providing dual-support for local JSON file fallback storage and remote Supabase queries.
 import fs from 'fs/promises';
 import path from 'path';
-import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { supabase, isSupabaseConfigured, createAuthenticatedClient } from './supabaseClient';
+
+
 
 export interface Medication {
   id: number;
@@ -14,9 +17,12 @@ export interface Medication {
 }
 
 export interface UserProfile {
+  id?: string;
   name: string;
   streak: number;
   streakHistory: boolean[];
+  role?: 'PATIENT' | 'CAREGIVER' | 'DOCTOR';
+  phone?: string;
 }
 
 export interface HydrationData {
@@ -31,8 +37,8 @@ export interface RefillData {
 export interface DoseLog {
   id: string;
   medicationId: number;
-  dateString: string; // YYYY-MM-DD
-  loggedAt: string; // ISO string
+  dateString: string; 
+  loggedAt: string;   
 }
 
 export interface DatabaseState {
@@ -43,42 +49,30 @@ export interface DatabaseState {
   logs: DoseLog[];
 }
 
+
+
 const DB_FILE = path.join(process.cwd(), 'db.json');
 
+// Fall back to a local JSON store when Supabase is unavailable.
 const DEFAULT_STATE: DatabaseState = {
   user: {
-    name: "Ahmed",
+    name: 'Ahmed',
     streak: 12,
-    streakHistory: [true, true, true, true, true, false, false], // Sun to Sat
+    streakHistory: [true, true, true, true, true, false, false],
   },
   medications: [
-    { id: 1, name: "Aspirin 81mg", icon: "💊", color: "#e84a5f", time: "08:00 AM", status: "taken", iconBg: "#2a0f14", requiresLock: false },
-    { id: 2, name: "Vitamin D 1000IU", icon: "☀️", color: "#f59e0b", time: "10:00 AM", status: "taken", iconBg: "#2a1f0a", requiresLock: false },
-    { id: 3, name: "Metformin 500mg", icon: "🔵", color: "#3b82f6", time: "02:00 PM", status: "due", iconBg: "#0a1530", requiresLock: true },
-    { id: 4, name: "Lisinopril 10mg", icon: "⚙️", color: "#8b5cf6", time: "08:00 PM", status: "upcoming", iconBg: "#1a1030", requiresLock: false },
+    { id: 1, name: 'Aspirin 81mg',      icon: '💊', color: '#e84a5f', time: '08:00 AM', status: 'taken',    iconBg: '#2a0f14', requiresLock: false },
+    { id: 2, name: 'Vitamin D 1000IU',  icon: '☀️', color: '#f59e0b', time: '10:00 AM', status: 'taken',    iconBg: '#2a1f0a', requiresLock: false },
+    { id: 3, name: 'Metformin 500mg',   icon: '🔵', color: '#3b82f6', time: '02:00 PM', status: 'due',      iconBg: '#0a1530', requiresLock: true  },
+    { id: 4, name: 'Lisinopril 10mg',   icon: '⚙️', color: '#8b5cf6', time: '08:00 PM', status: 'upcoming', iconBg: '#1a1030', requiresLock: false },
   ],
-  hydration: {
-    current: 1.2,
-    goal: 2.5
-  },
-  refills: {
-    pending: 2
-  },
+  hydration: { current: 1.2, goal: 2.5 },
+  refills: { pending: 2 },
   logs: [
     // Pre-populate with Aspirin and Vitamin D logged today
-    {
-      id: "log-1",
-      medicationId: 1,
-      dateString: new Date().toISOString().split('T')[0],
-      loggedAt: new Date().toISOString()
-    },
-    {
-      id: "log-2",
-      medicationId: 2,
-      dateString: new Date().toISOString().split('T')[0],
-      loggedAt: new Date().toISOString()
-    }
-  ]
+    { id: 'log-1', medicationId: 1, dateString: new Date().toISOString().split('T')[0], loggedAt: new Date().toISOString() },
+    { id: 'log-2', medicationId: 2, dateString: new Date().toISOString().split('T')[0], loggedAt: new Date().toISOString() },
+  ],
 };
 
 // Ensure DB is initialized
@@ -86,7 +80,7 @@ async function ensureDb(): Promise<DatabaseState> {
   try {
     const data = await fs.readFile(DB_FILE, 'utf8');
     return JSON.parse(data);
-  } catch (error) {
+  } catch {
     // If file doesn't exist, create it with default state
     await fs.writeFile(DB_FILE, JSON.stringify(DEFAULT_STATE, null, 2), 'utf8');
     return DEFAULT_STATE;
@@ -98,247 +92,215 @@ async function saveDb(state: DatabaseState): Promise<void> {
 }
 
 // Helper to determine status dynamically based on current time
-function getMedicationStatus(timeStr: string, isLogged: boolean, requiresLock: boolean): 'taken' | 'due' | 'upcoming' {
+export function getMedicationStatus(timeStr: string, isLogged: boolean): 'taken' | 'due' | 'upcoming' {
   if (isLogged) return 'taken';
   try {
+    // Parse scheduled medication time (e.g. "08:00 AM" or "02:30 PM") into numeric hours and minutes.
     const parts = timeStr.split(' ');
     const time = parts[0];
     const modifier = parts[1];
     let [hours, minutes] = time.split(':').map(Number);
+    // Convert 12-hour clock representation to standard 24-hour integers.
     if (modifier === 'PM' && hours < 12) hours += 12;
     if (modifier === 'AM' && hours === 12) hours = 0;
-    
     const now = new Date();
+    // Reconstruct the scheduled time on today's calendar date to compare it with the current time.
     const scheduled = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
-    
     return now >= scheduled ? 'due' : 'upcoming';
-  } catch (e) {
-    return requiresLock ? 'due' : 'due';
+  } catch {
+    return 'due';
   }
 }
 
-// Automatic self-seeding for Supabase if the tables are empty
-async function ensureSupabaseData(): Promise<void> {
-  if (!isSupabaseConfigured) return;
+
+
+
+
+
+
+
+export function getSupabaseClient(accessToken?: string | null) {
+  if (!isSupabaseConfigured) return null;
+  if (accessToken) {
+    return createAuthenticatedClient(accessToken);
+  }
+  return supabase;
+}
+
+
+
+
+
+export async function getCurrentProfileId(accessToken?: string | null): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const client = getSupabaseClient(accessToken);
+  if (!client) return null;
   try {
-    const { data: profiles, error: pError } = await supabase.from('profiles').select('id').limit(1);
-    if (pError) {
-      console.error('Supabase checking profiles error:', pError);
-      return;
-    }
-    if (!profiles || profiles.length === 0) {
-      console.log('Supabase database is empty. Autoseeding default data...');
-      
-      const { data: profile, error: uError } = await supabase.from('profiles').insert({
-        name: "Ahmed",
-        streak: 12,
-        streak_history: [true, true, true, true, true, false, false]
-      }).select().single();
-      
-      if (uError || !profile) {
-        console.error('Error seeding profile:', uError);
-        return;
-      }
-      
-      const { data: meds, error: mError } = await supabase.from('medications').insert([
-        { profile_id: profile.id, name: "Aspirin 81mg", icon: "💊", color: "#e84a5f", time: "08:00 AM", requires_lock: false, icon_bg: "#2a0f14" },
-        { profile_id: profile.id, name: "Vitamin D 1000IU", icon: "☀️", color: "#f59e0b", time: "10:00 AM", requires_lock: false, icon_bg: "#2a1f0a" },
-        { profile_id: profile.id, name: "Metformin 500mg", icon: "🔵", color: "#3b82f6", time: "02:00 PM", requires_lock: true, icon_bg: "#0a1530" },
-        { profile_id: profile.id, name: "Lisinopril 10mg", icon: "⚙️", color: "#8b5cf6", time: "08:00 PM", requires_lock: false, icon_bg: "#1a1030" }
-      ]).select();
-      
-      if (mError || !meds) {
-        console.error('Error seeding medications:', mError);
-        return;
-      }
-      
-      await supabase.from('hydration').insert({
-        profile_id: profile.id,
-        current: 1.2,
-        goal: 2.5
-      });
-      
-      await supabase.from('refills').insert({
-        profile_id: profile.id,
-        pending: 2
-      });
-
-      const aspirin = meds.find((m: any) => m.name.includes("Aspirin"));
-      const vitD = meds.find((m: any) => m.name.includes("Vitamin D"));
-      const todayStr = new Date().toISOString().split('T')[0];
-      
-      const logsToInsert = [];
-      if (aspirin) {
-        logsToInsert.push({ profile_id: profile.id, medication_id: aspirin.id, date_string: todayStr, logged_at: new Date().toISOString() });
-      }
-      if (vitD) {
-        logsToInsert.push({ profile_id: profile.id, medication_id: vitD.id, date_string: todayStr, logged_at: new Date().toISOString() });
-      }
-      if (logsToInsert.length > 0) {
-        await supabase.from('dose_logs').insert(logsToInsert);
-      }
-      
-      console.log('Supabase database autoseeded successfully!');
-    }
-  } catch (error) {
-    console.error('Failed to ensure Supabase database state:', error);
+    const { data: { user }, error } = await client.auth.getUser();
+    if (error || !user) return null;
+    const { data: profile } = await client
+      .from('profiles')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    return profile?.id ?? null;
+  } catch {
+    return null;
   }
 }
 
-export async function getDashboardData() {
+
+
+function mapDbMed(med: any, logs: any[], todayStr: string): Medication {
+  // Convert database rows into the medication shape used by the UI.
+  const isLoggedToday = logs.some((log: any) => log.medication_id === med.id && log.date_string === todayStr);
+  return {
+    id: med.id,
+    name: med.name,
+    icon: med.icon,
+    color: med.color,
+    time: med.time,
+    status: getMedicationStatus(med.time, isLoggedToday),
+    iconBg: med.icon_bg,
+    requiresLock: med.requires_lock,
+  };
+}
+
+
+
+export async function getDashboardData(accessToken?: string | null) {
   if (isSupabaseConfigured) {
-    await ensureSupabaseData();
+    const client = getSupabaseClient(accessToken);
+    if (!client) throw new Error('Supabase client unavailable');
+
     const todayStr = new Date().toISOString().split('T')[0];
-    
+    const profileId = await getCurrentProfileId(accessToken);
+
+    if (!profileId) {
+      
+      return {
+        user: { name: 'Unknown', streak: 0, streakHistory: Array(7).fill(false) },
+        medications: [],
+        hydration: { current: 0, goal: 2.5 },
+        refills: { pending: 0 },
+        adherence: { percent: 0, taken: 0, total: 0 },
+      };
+    }
+
+    // Parallelize remote database fetching using Promise.all to avoid waterfall delays.
     const [profileRes, medsRes, hydRes, refRes, logsRes] = await Promise.all([
-      supabase.from('profiles').select('*').limit(1).maybeSingle(),
-      supabase.from('medications').select('*').order('id', { ascending: true }),
-      supabase.from('hydration').select('*').limit(1).maybeSingle(),
-      supabase.from('refills').select('*').limit(1).maybeSingle(),
-      supabase.from('dose_logs').select('*').eq('date_string', todayStr)
+      client.from('profiles').select('*').eq('id', profileId).single(),
+      client.from('medications').select('*').eq('profile_id', profileId).order('id', { ascending: true }),
+      client.from('hydration').select('*').eq('profile_id', profileId).maybeSingle(),
+      client.from('refills').select('*').eq('profile_id', profileId).maybeSingle(),
+      client.from('dose_logs').select('*').eq('profile_id', profileId).eq('date_string', todayStr),
     ]);
 
-    const profile = profileRes.data || { name: 'Ahmed', streak: 12, streak_history: [true, true, true, true, true, false, false] };
+    const profile = profileRes.data || { name: 'User', streak: 0, streak_history: Array(7).fill(false) };
     const medications = medsRes.data || [];
-    const hydration = hydRes.data || { current: 1.2, goal: 2.5 };
-    const refills = refRes.data || { pending: 2 };
+    const hydration = hydRes.data || { current: 0, goal: 2.5 };
+    const refills = refRes.data || { pending: 0 };
     const logs = logsRes.data || [];
 
-    const updatedMedications = medications.map((med: any) => {
-      const isLoggedToday = logs.some((log: any) => log.medication_id === med.id);
-      const currentStatus = getMedicationStatus(med.time, isLoggedToday, med.requires_lock);
-      return {
-        id: med.id,
-        name: med.name,
-        icon: med.icon,
-        color: med.color,
-        time: med.time,
-        status: currentStatus,
-        iconBg: med.icon_bg,
-        requiresLock: med.requires_lock
-      };
-    });
-
+    // Map remote database records to UI shapes and compute current day's compliance ratios.
+    const updatedMedications = medications.map((med: any) => mapDbMed(med, logs, todayStr));
     const total = updatedMedications.length;
-    const taken = updatedMedications.filter((m: any) => m.status === 'taken').length;
+    const taken = updatedMedications.filter((m: Medication) => m.status === 'taken').length;
     const percent = total > 0 ? Math.round((taken / total) * 100) : 0;
 
     return {
-      user: {
-        name: profile.name,
-        streak: profile.streak,
-        streakHistory: profile.streak_history
-      },
+      user: { name: profile.name, streak: profile.streak, streakHistory: profile.streak_history, id: profile.id, role: profile.role, phone: profile.phone },
       medications: updatedMedications,
-      hydration: {
-        current: Number(hydration.current),
-        goal: Number(hydration.goal)
-      },
-      refills: {
-        pending: refills.pending
-      },
-      adherence: {
-        percent,
-        taken,
-        total
-      }
+      hydration: { current: Number(hydration.current), goal: Number(hydration.goal) },
+      refills: { pending: refills.pending },
+      adherence: { percent, taken, total },
     };
   }
 
   // Fallback to local db.json
   const db = await ensureDb();
   const todayStr = new Date().toISOString().split('T')[0];
-
   const updatedMedications = db.medications.map(med => {
     const isLoggedToday = db.logs.some(log => log.medicationId === med.id && log.dateString === todayStr);
-    const currentStatus = getMedicationStatus(med.time, isLoggedToday, med.requiresLock);
-    return {
-      ...med,
-      status: currentStatus
-    };
+    return { ...med, status: getMedicationStatus(med.time, isLoggedToday) };
   });
-
   const total = updatedMedications.length;
   const taken = updatedMedications.filter(m => m.status === 'taken').length;
   const percent = total > 0 ? Math.round((taken / total) * 100) : 0;
-
   return {
     user: db.user,
     medications: updatedMedications,
     hydration: db.hydration,
     refills: db.refills,
-    adherence: {
-      percent,
-      taken,
-      total
-    }
+    adherence: { percent, taken, total },
   };
 }
 
-export async function logDose(medicationId: number) {
+
+
+export async function logDose(medicationId: number, accessToken?: string | null) {
   if (isSupabaseConfigured) {
+    const client = getSupabaseClient(accessToken);
+    if (!client) throw new Error('Supabase client unavailable');
+
     const todayStr = new Date().toISOString().split('T')[0];
-    
-    const [profileRes, medsRes, logsRes] = await Promise.all([
-      supabase.from('profiles').select('*').limit(1).maybeSingle(),
-      supabase.from('medications').select('*').order('id', { ascending: true }),
-      supabase.from('dose_logs').select('*').eq('date_string', todayStr)
+    const profileId = await getCurrentProfileId(accessToken);
+    if (!profileId) throw new Error('Profile not found');
+
+    const [medsRes, logsRes] = await Promise.all([
+      client.from('medications').select('*').eq('profile_id', profileId),
+      client.from('dose_logs').select('*').eq('profile_id', profileId).eq('date_string', todayStr),
     ]);
-    
-    const profile = profileRes.data;
+
     const medications = medsRes.data || [];
     const logs = logsRes.data || [];
-    
-    if (profile) {
-      const alreadyLogged = logs.some((l: any) => l.medication_id === medicationId);
-      if (!alreadyLogged) {
-        await supabase.from('dose_logs').insert({
-          profile_id: profile.id,
-          medication_id: medicationId,
-          date_string: todayStr,
-          logged_at: new Date().toISOString()
-        });
-        
-        // Re-fetch today's logs to verify if all meds are taken
-        const { data: updatedLogs } = await supabase.from('dose_logs').select('*').eq('date_string', todayStr);
-        const currentLogs = updatedLogs || [];
-        
-        const allTaken = medications.every((med: any) => 
-          currentLogs.some((l: any) => l.medication_id === med.id)
-        );
-        
-        if (allTaken) {
+    const alreadyLogged = logs.some((l: any) => l.medication_id === medicationId);
+
+    if (!alreadyLogged) {
+      // Record a new dose logging entry with ISO timestamp and local date string.
+      await client.from('dose_logs').insert({
+        profile_id: profileId,
+        medication_id: medicationId,
+        date_string: todayStr,
+        logged_at: new Date().toISOString(),
+      });
+
+      const { data: updatedLogs } = await client.from('dose_logs').select('*').eq('profile_id', profileId).eq('date_string', todayStr);
+      const currentLogs = updatedLogs || [];
+      // Evaluate if all scheduled medications for today have matching dose logs.
+      const allTaken = medications.every((med: any) => currentLogs.some((l: any) => l.medication_id === med.id));
+
+      if (allTaken) {
+        const { data: profile } = await client.from('profiles').select('*').eq('id', profileId).single();
+        if (profile) {
+          // Increment the user's compliance streak and register today's completion in the weekly completed history array.
           const dayOfWeek = new Date().getDay();
-          const updatedHistory = [...profile.streak_history];
+          const updatedHistory = [...(profile.streak_history || Array(7).fill(false))];
           if (!updatedHistory[dayOfWeek]) {
             updatedHistory[dayOfWeek] = true;
-            await supabase.from('profiles').update({
-              streak_history: updatedHistory,
-              streak: profile.streak + 1
-            }).eq('id', profile.id);
+            await client.from('profiles').update({ streak_history: updatedHistory, streak: (profile.streak || 0) + 1 }).eq('id', profileId);
           }
         }
       }
     }
-    return getDashboardData();
+
+    return getDashboardData(accessToken);
   }
 
-  // Fallback to local db.json
+  
   const db = await ensureDb();
   const todayStr = new Date().toISOString().split('T')[0];
-
   const alreadyLogged = db.logs.some(log => log.medicationId === medicationId && log.dateString === todayStr);
-  
+
   if (!alreadyLogged) {
     db.logs.push({
       id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       medicationId,
       dateString: todayStr,
-      loggedAt: new Date().toISOString()
+      loggedAt: new Date().toISOString(),
     });
 
-    const allMeds = db.medications;
-    const allLoggedToday = allMeds.every(med => {
+    const allLoggedToday = db.medications.every(med => {
       if (med.id === medicationId) return true;
       return db.logs.some(log => log.medicationId === med.id && log.dateString === todayStr);
     });
@@ -359,40 +321,87 @@ export async function logDose(medicationId: number) {
   return getDashboardData();
 }
 
-export async function addHydration(amountLiters: number) {
+
+
+export async function addHydration(amountLiters: number, accessToken?: string | null) {
   if (isSupabaseConfigured) {
-    const { data: hydration } = await supabase.from('hydration').select('*').limit(1).maybeSingle();
+    const client = getSupabaseClient(accessToken);
+    if (!client) throw new Error('Supabase client unavailable');
+
+    const profileId = await getCurrentProfileId(accessToken);
+    if (!profileId) throw new Error('Profile not found');
+
+    const { data: hydration } = await client.from('hydration').select('*').eq('profile_id', profileId).single();
     if (hydration) {
+      // Add the intake increment and format as float to prevent JavaScript floating point inaccuracies (e.g. 0.1 + 0.2 = 0.30000000000000004).
       const nextCurrent = Math.min(Number(hydration.goal), parseFloat((Number(hydration.current) + amountLiters).toFixed(2)));
-      await supabase.from('hydration').update({ current: nextCurrent }).eq('profile_id', hydration.profile_id);
+      await client.from('hydration').update({ current: nextCurrent }).eq('profile_id', profileId);
     }
-    return getDashboardData();
+    return getDashboardData(accessToken);
   }
 
-  // Fallback to local db.json
   const db = await ensureDb();
   db.hydration.current = Math.min(db.hydration.goal, parseFloat((db.hydration.current + amountLiters).toFixed(2)));
   await saveDb(db);
   return getDashboardData();
 }
 
-export async function resetDatabase() {
+
+
+export async function resetDatabase(accessToken?: string | null) {
   if (isSupabaseConfigured) {
-    const { data: profile } = await supabase.from('profiles').select('id').limit(1).maybeSingle();
-    if (profile) {
-      await Promise.all([
-        supabase.from('dose_logs').delete().eq('profile_id', profile.id),
-        supabase.from('medications').delete().eq('profile_id', profile.id),
-        supabase.from('hydration').delete().eq('profile_id', profile.id),
-        supabase.from('refills').delete().eq('profile_id', profile.id),
-      ]);
-      await supabase.from('profiles').delete().eq('id', profile.id);
-    }
-    await ensureSupabaseData();
-    return getDashboardData();
+    const client = getSupabaseClient(accessToken);
+    if (!client) throw new Error('Supabase client unavailable');
+
+    const profileId = await getCurrentProfileId(accessToken);
+    if (!profileId) throw new Error('Profile not found');
+
+    await Promise.all([
+      client.from('dose_logs').delete().eq('profile_id', profileId),
+      client.from('hydration').update({ current: 0 }).eq('profile_id', profileId),
+    ]);
+
+    return getDashboardData(accessToken);
   }
 
-  // Fallback to local db.json
   await saveDb(DEFAULT_STATE);
   return getDashboardData();
+}
+
+
+
+export async function getPatientMedications(profileId: string, accessToken?: string | null): Promise<Medication[]> {
+  if (isSupabaseConfigured) {
+    const client = getSupabaseClient(accessToken);
+    if (!client) return [];
+    const todayStr = new Date().toISOString().split('T')[0];
+    const [medsRes, logsRes] = await Promise.all([
+      client.from('medications').select('*').eq('profile_id', profileId),
+      client.from('dose_logs').select('*').eq('profile_id', profileId).eq('date_string', todayStr),
+    ]);
+    const meds = medsRes.data || [];
+    const logs = logsRes.data || [];
+    return meds.map((m: any) => mapDbMed(m, logs, todayStr));
+  }
+  const db = await ensureDb();
+  return db.medications;
+}
+
+
+
+export async function getRawMedications(profileId: string, client?: any) {
+  const c = client || supabase;
+  if (!isSupabaseConfigured || !c) return [];
+  const { data } = await c.from('medications').select('*').eq('profile_id', profileId);
+  return data || [];
+}
+
+export async function getRawDoseLogs(profileId: string, daysBack = 7, client?: any) {
+  const c = client || supabase;
+  if (!isSupabaseConfigured || !c) return [];
+  const since = new Date();
+  since.setDate(since.getDate() - daysBack);
+  const sinceStr = since.toISOString().split('T')[0];
+  const { data } = await c.from('dose_logs').select('*').eq('profile_id', profileId).gte('date_string', sinceStr).order('date_string', { ascending: true });
+  return data || [];
 }

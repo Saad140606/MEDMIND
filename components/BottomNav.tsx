@@ -1,3 +1,4 @@
+// Renders the persistent bottom navigation bar showing active status and linking core MedMind screens.
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -47,6 +48,7 @@ export function BottomNav() {
               }}
             >
               {active && (
+                /* Renders a top-centered green indicator bar for the active navigation tab */
                 <span
                   style={{
                     position: "absolute",

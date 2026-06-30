@@ -1,3 +1,4 @@
+/* MedMind global styles setting CSS custom properties, utility classes, input styles, bubble styles, and micro-animations. */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @tailwind base;
 @tailwind components;
@@ -186,6 +187,22 @@ html, body {
 }
 
 .animate-pulse-ring { animation: pulse-ring 1.8s ease-out infinite; }
+
+.mic-orb {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #39ff9e, #1aae6a);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 0 32px rgba(57, 255, 158, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+}
+.mic-orb:hover { transform: scale(1.05); box-shadow: 0 0 48px rgba(57, 255, 158, 0.55); }
+.mic-orb:active { transform: scale(0.96); }
 .animate-float { animation: float 3s ease-in-out infinite; }
 .animate-slide-up { animation: slide-up 0.4s ease forwards; }
 .animate-blink { animation: blink 1.2s ease infinite; }

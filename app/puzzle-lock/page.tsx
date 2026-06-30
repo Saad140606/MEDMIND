@@ -1,3 +1,4 @@
+// Interactive arithmetic puzzle page verifying active patient awareness before permitting medication dose logging.
 "use client";
 import { useState, useEffect, Suspense } from "react";
 import { ArrowLeft, Bell, Delete, CheckCircle2, Loader2 } from "lucide-react";
@@ -89,8 +90,10 @@ function PuzzleLockContent() {
     if (isSubmitting) return;
 
     if (key === "del") {
+      // Slices off the last character of input string to handle backspace.
       setInput((prev) => prev.slice(0, -1));
     } else if (key === "enter") {
+      // Check the current input against the sum. Reset input if verification fails.
       if (input === correctAnswer) {
         triggerConfirm();
       } else {
@@ -98,6 +101,7 @@ function PuzzleLockContent() {
         setInput("");
       }
     } else {
+      // Limit numeric input to at most 2 digits to match max possible sums.
       if (input.length < 2) setInput((prev) => prev + key);
     }
   };

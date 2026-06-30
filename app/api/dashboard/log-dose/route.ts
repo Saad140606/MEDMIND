@@ -1,5 +1,8 @@
+// API endpoint processing intake logging for a medication dose, updating streaks/history, and returning dashboard metrics.
 import { NextResponse } from 'next/server';
 import { logDose } from '../../../../lib/db';
+
+import { extractToken } from '../../../../lib/auth';
 
 export async function POST(request: Request) {
   try {
@@ -7,7 +10,9 @@ export async function POST(request: Request) {
     if (medicationId === undefined || medicationId === null) {
       return NextResponse.json({ error: 'Medication ID is required' }, { status: 400 });
     }
-    const updatedData = await logDose(Number(medicationId));
+    const token = extractToken(request);
+    // Parse token and record logged medication intake parameters before returning dashboard stats.
+    const updatedData = await logDose(Number(medicationId), token);
     return NextResponse.json(updatedData);
   } catch (error: any) {
     console.error('Error logging dose:', error);
