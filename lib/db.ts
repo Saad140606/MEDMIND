@@ -189,7 +189,7 @@ export async function getDashboardData(accessToken?: string | null) {
 
     // Parallelize remote database fetching using Promise.all to avoid waterfall delays.
     const [profileRes, medsRes, hydRes, refRes, logsRes] = await Promise.all([
-      client.from('profiles').select('*').eq('id', profileId).single(),
+      client.from('profiles').select('id, name, role, phone, streak, streak_history, user_id').eq('id', profileId).single(),
       client.from('medications').select('*').eq('profile_id', profileId).order('id', { ascending: true }),
       client.from('hydration').select('*').eq('profile_id', profileId).maybeSingle(),
       client.from('refills').select('*').eq('profile_id', profileId).maybeSingle(),
@@ -271,7 +271,7 @@ export async function logDose(medicationId: number, accessToken?: string | null)
       const allTaken = medications.every((med: any) => currentLogs.some((l: any) => l.medication_id === med.id));
 
       if (allTaken) {
-        const { data: profile } = await client.from('profiles').select('*').eq('id', profileId).single();
+        const { data: profile } = await client.from('profiles').select('id, name, role, phone, streak, streak_history, user_id').eq('id', profileId).single();
         if (profile) {
           // Increment the user's compliance streak and register today's completion in the weekly completed history array.
           const dayOfWeek = new Date().getDay();

@@ -21,9 +21,14 @@ export const supabase = isSupabaseConfigured
   : (null as any);
 
 
+let browserClient: any;
+
 export function createBrowserSupabaseClient() {
   if (!isSupabaseConfigured) return null as any;
-  return createBrowserClient(supabaseUrl!, supabaseAnonKey!);
+  if (!browserClient) {
+    browserClient = createBrowserClient(supabaseUrl!, supabaseAnonKey!);
+  }
+  return browserClient;
 }
 
 

@@ -33,7 +33,7 @@ export async function getCurrentUser(): Promise<{ session: any; profile: UserPro
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('*')
+    .select('id, name, role, phone, streak, streak_history, user_id')
     .eq('user_id', session.user.id)
     .maybeSingle();
 

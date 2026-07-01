@@ -1,9 +1,19 @@
 -- Migration script extending user profiles, establishing doctor/caregiver relationships, and setting up auth-scoped RLS policies.
-DELETE FROM public.dose_logs WHERE profile_id IN (SELECT id FROM public.profiles WHERE user_id IS NULL);
-DELETE FROM public.medications WHERE profile_id IN (SELECT id FROM public.profiles WHERE user_id IS NULL);
-DELETE FROM public.hydration WHERE profile_id IN (SELECT id FROM public.profiles WHERE user_id IS NULL);
-DELETE FROM public.refills WHERE profile_id IN (SELECT id FROM public.profiles WHERE user_id IS NULL);
-DELETE FROM public.profiles WHERE user_id IS NULL;
+
+-- Only delete records with null user_id if the column already exists
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'profiles' AND column_name = 'user_id'
+  ) THEN
+    DELETE FROM public.dose_logs WHERE profile_id IN (SELECT id FROM public.profiles WHERE user_id IS NULL);
+    DELETE FROM public.medications WHERE profile_id IN (SELECT id FROM public.profiles WHERE user_id IS NULL);
+    DELETE FROM public.hydration WHERE profile_id IN (SELECT id FROM public.profiles WHERE user_id IS NULL);
+    DELETE FROM public.refills WHERE profile_id IN (SELECT id FROM public.profiles WHERE user_id IS NULL);
+    DELETE FROM public.profiles WHERE user_id IS NULL;
+  END IF;
+END$$;
 
 -- ─────────────────────────────────────────────
 -- 1. Extend profiles table
@@ -106,6 +116,8 @@ DROP POLICY IF EXISTS "Allow public delete on dose_logs" ON public.dose_logs;
 CREATE OR REPLACE FUNCTION public.get_my_profile_id()
 RETURNS UUID
 LANGUAGE sql STABLE
+SECURITY DEFINER
+SET search_path = public
 AS $$
   SELECT id FROM public.profiles WHERE user_id = auth.uid() LIMIT 1;
 $$;

@@ -100,47 +100,96 @@ export async function POST(request: Request) {
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    const responseText = matchedMed
-      ? `I found ${matchedMed.name} in your list. Did you want to log it?`
-      : `I heard: "${transcript}". Please say the medication name clearly, e.g. "Log my Metformin".`;
-    return NextResponse.json<ParseResult>({ action: 'UNKNOWN', responseText });
+  const groqApiKey = process.env.GROQ_API_KEY;
+
+  if (apiKey) {
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      const medList = medications.map(m => `id:${m.id} name:"${m.name}" status:${m.status}`).join(', ');
+      // Issue structured instruction prompt to Gemini requesting a single, schema-compliant JSON response block.
+      const prompt = `The patient said: "${transcript}"\n\nTheir medications: ${medList || 'none'}\n\nRespond with ONLY valid JSON: {"action":"LOG_DOSE"|"QUERY_STATUS"|"UNKNOWN","medicationId":number|null,"responseText":"string"}\n\naction=LOG_DOSE if they want to log a dose, QUERY_STATUS if asking about status, UNKNOWN otherwise. medicationId must match one of the listed ids or null. responseText should be a friendly 1-sentence confirmation.`;
+
+      const result = await model.generateContent(prompt);
+      const text = result.response.text().trim();
+      // Parse the output using regex to safely extract the raw JSON brackets, stripping away LLM markdown formatting ticks if present.
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed: ParseResult = JSON.parse(jsonMatch[0]);
+        const responseData = await handleParsedResult(parsed, medications, token);
+        return NextResponse.json<ParseResult>(responseData);
+      }
+    } catch (err) {
+      console.error('Gemini voice parse error, trying Groq fallback:', err);
+    }
   }
 
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const medList = medications.map(m => `id:${m.id} name:"${m.name}" status:${m.status}`).join(', ');
-    // Issue structured instruction prompt to Gemini requesting a single, schema-compliant JSON response block.
-    const prompt = `The patient said: "${transcript}"\n\nTheir medications: ${medList || 'none'}\n\nRespond with ONLY valid JSON: {"action":"LOG_DOSE"|"QUERY_STATUS"|"UNKNOWN","medicationId":number|null,"responseText":"string"}\n\naction=LOG_DOSE if they want to log a dose, QUERY_STATUS if asking about status, UNKNOWN otherwise. medicationId must match one of the listed ids or null. responseText should be a friendly 1-sentence confirmation.`;
+  // Fallback to Groq API
+  if (groqApiKey) {
+    try {
+      const medList = medications.map(m => `id:${m.id} name:"${m.name}" status:${m.status}`).join(', ');
+      const prompt = `The patient said: "${transcript}"\n\nTheir medications: ${medList || 'none'}\n\nRespond with ONLY valid JSON: {"action":"LOG_DOSE"|"QUERY_STATUS"|"UNKNOWN","medicationId":number|null,"responseText":"string"}\n\naction=LOG_DOSE if they want to log a dose, QUERY_STATUS if asking about status, UNKNOWN otherwise. medicationId must match one of the listed ids or null. responseText should be a friendly 1-sentence confirmation.`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
-    // Parse the output using regex to safely extract the raw JSON brackets, stripping away LLM markdown formatting ticks if present.
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed: ParseResult = JSON.parse(jsonMatch[0]);
-      if (parsed.action === 'LOG_DOSE' && parsed.medicationId) {
-        try {
-          await logDose(parsed.medicationId, token);
-          const medName = medications.find(m => m.id === parsed.medicationId)?.name || 'medication';
-          return NextResponse.json<ParseResult>({
-            ...parsed,
-            medicationName: medName,
-            responseText: `Got it! ${medName} logged at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
-          });
-        } catch {
-          return NextResponse.json<ParseResult>({ ...parsed, responseText: 'Found the medication but could not save the log. Please try again.' });
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${groqApiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: 'You are a precise medical assistant voice parser. Respond with JSON only.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.1,
+          response_format: { type: "json_object" }
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.choices?.[0]?.message?.content?.trim() || '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed: ParseResult = JSON.parse(jsonMatch[0]);
+          const responseData = await handleParsedResult(parsed, medications, token);
+          return NextResponse.json<ParseResult>(responseData);
         }
       }
-      return NextResponse.json<ParseResult>(parsed);
+    } catch (groqErr) {
+      console.error('Groq voice parse fallback error:', groqErr);
     }
-  } catch (err) {
-    console.error('Gemini voice parse error:', err);
   }
+
+  // Final fallback if both APIs fail/are not set
+  const responseText = matchedMed
+    ? `I found ${matchedMed.name} in your list. Did you want to log it?`
+    : `I heard: "${transcript}". Please say the medication name clearly, e.g. "Log my Metformin".`;
 
   return NextResponse.json<ParseResult>({
     action: 'UNKNOWN',
-    responseText: `I heard "${transcript}" but couldn't understand. Try saying "Log my [medication name]".`,
+    responseText,
   });
+}
+
+async function handleParsedResult(
+  parsed: ParseResult,
+  medications: Medication[],
+  token: string | null
+): Promise<ParseResult> {
+  if (parsed.action === 'LOG_DOSE' && parsed.medicationId) {
+    try {
+      await logDose(parsed.medicationId, token);
+      const medName = medications.find(m => m.id === parsed.medicationId)?.name || 'medication';
+      return {
+        ...parsed,
+        medicationName: medName,
+        responseText: `Got it! ${medName} logged at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
+      };
+    } catch {
+      return { ...parsed, responseText: 'Found the medication but could not save the log. Please try again.' };
+    }
+  }
+  return parsed;
 }

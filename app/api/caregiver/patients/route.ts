@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   const patientsData = await Promise.all(
     patientIds.map(async (patientId: string) => {
       const [profileRes, medsRes, logsRes, weekLogsRes] = await Promise.all([
-        client.from('profiles').select('*').eq('id', patientId).single(),
+        client.from('profiles').select('id, name, role, phone, streak, streak_history, user_id').eq('id', patientId).single(),
         client.from('medications').select('*').eq('profile_id', patientId).order('id', { ascending: true }),
         client.from('dose_logs').select('*').eq('profile_id', patientId).eq('date_string', todayStr),
         client.from('dose_logs').select('*').eq('profile_id', patientId).order('date_string', { ascending: false }).limit(70),
