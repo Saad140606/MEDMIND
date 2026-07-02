@@ -196,7 +196,7 @@ export async function getDashboardData(accessToken?: string | null) {
       client.from('dose_logs').select('*').eq('profile_id', profileId).eq('date_string', todayStr),
     ]);
 
-    const profile = profileRes.data || { name: 'User', streak: 0, streak_history: Array(7).fill(false) };
+    const profile = profileRes.data || { id: undefined, name: 'User', role: undefined, phone: undefined, streak: 0, streak_history: Array(7).fill(false) };
     const medications = medsRes.data || [];
     const hydration = hydRes.data || { current: 0, goal: 2.5 };
     const refills = refRes.data || { pending: 0 };

@@ -2,12 +2,12 @@
 import { NextResponse } from 'next/server';
 import { resetDatabase } from '../../../../lib/db';
 
-import { extractToken } from '../../../../lib/auth';
+import { extractToken } from '../../../../lib/authServer';
 
 
 export async function POST(request: Request) {
   try {
-    const token = extractToken(request);
+    const token = await extractToken(request);
     // Revert user status (dose completion logs and hydration quotas) to default configuration.
     const data = await resetDatabase(token);
     return NextResponse.json(data);

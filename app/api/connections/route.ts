@@ -1,7 +1,7 @@
 // API endpoint retrieving all active/pending caregiver and doctor links for the authenticated client profile.
 import { NextResponse } from 'next/server';
 import { isSupabaseConfigured, createAuthenticatedClient } from '../../../lib/supabaseClient';
-import { extractToken } from '../../../lib/auth';
+import { extractToken } from '../../../lib/authServer';
 import { getCurrentProfileId } from '../../../lib/db';
 
 export async function GET(request: Request) {
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Connections require Supabase configuration' }, { status: 503 });
   }
 
-  const token = extractToken(request);
+  const token = await extractToken(request);
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const client = createAuthenticatedClient(token);

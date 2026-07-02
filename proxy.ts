@@ -1,6 +1,7 @@
 // Middleware request interceptor routing unauthenticated users to login and permitting public route fallbacks.
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 
 const PUBLIC_PATHS = ['/login', '/offline', '/_next', '/favicon.ico', '/manifest.json', '/sw.js', '/api/auth', '/icon-192.svg', '/icon-512.svg'];
 
@@ -20,40 +21,35 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Read session from cookies
-  let session = null;
-  try {
-    // Manually parse cookies from the request headers to extract the auth token.
-    const cookieHeader = request.headers.get('cookie') || '';
-    const cookies: Record<string, string> = {};
-    cookieHeader.split(';').forEach(c => {
-      const [k, ...v] = c.trim().split('=');
-      if (k) cookies[decodeURIComponent(k.trim())] = decodeURIComponent(v.join('=').trim());
-    });
+  const response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  });
 
-    // Supabase SSR stores session in a cookie containing 'auth-token' inside its key.
-    const tokenKey = Object.keys(cookies).find(k => k.includes('auth-token'));
-    if (tokenKey && cookies[tokenKey]) {
-      try {
-        const parsed = JSON.parse(cookies[tokenKey]);
-        if (parsed && parsed.access_token) {
-          session = parsed;
-        }
-      } catch {
-        // ignore
-      }
-    }
-  } catch {
-    // ignore
-  }
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        cookiesToSet.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
 
-  if (!session) {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirectTo', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {

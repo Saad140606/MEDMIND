@@ -1,6 +1,6 @@
 // Authentication screen handling patient, caregiver, and doctor credentials, registrations, and environment configuration alerts.
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Eye, EyeOff, Sparkles, AlertCircle } from "lucide-react";
 import { signIn, signUp } from "@/lib/auth";
@@ -33,7 +33,9 @@ export default function LoginPage() {
       if (mode === "login") {
         // Authenticate credentials against database, returning browser session cookies.
         await signIn(email, password);
-        router.replace("/");
+        const redirectTo = new URLSearchParams(window.location.search).get("redirectTo") || "/";
+        router.replace(redirectTo);
+        router.refresh();
       } else {
         if (!name.trim()) throw new Error("Name is required");
         // Create auth registration and trigger automated seeding for the chosen profile role.
@@ -41,8 +43,8 @@ export default function LoginPage() {
         setSuccess("Account created! Check your email to confirm, then log in.");
         setMode("login");
       }
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }

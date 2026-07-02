@@ -1,7 +1,7 @@
 // API endpoint generating historical adherence timelines and individual medication percentage reports for clinician review.
 import { NextResponse } from 'next/server';
 import { isSupabaseConfigured, createAuthenticatedClient } from '../../../../lib/supabaseClient';
-import { extractToken } from '../../../../lib/auth';
+import { extractToken } from '../../../../lib/authServer';
 import { getCurrentProfileId } from '../../../../lib/db';
 import { computeAdherenceFromRaw, computePerMedAdherence } from '../../../../lib/adherence';
 
@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Requires Supabase configuration' }, { status: 503 });
   }
 
-  const token = extractToken(request);
+  const token = await extractToken(request);
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const client = createAuthenticatedClient(token);

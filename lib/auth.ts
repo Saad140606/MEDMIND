@@ -10,20 +10,12 @@ export interface UserProfile {
   streak_history: boolean[];
 }
 
-
-
-
-
-
 export async function getSession() {
   if (!isSupabaseConfigured) return null;
   const supabase = createBrowserSupabaseClient();
   const { data } = await supabase.auth.getSession();
   return data.session;
 }
-
-
-
 
 export async function getCurrentUser(): Promise<{ session: any; profile: UserProfile | null } | null> {
   if (!isSupabaseConfigured) return null;
@@ -40,17 +32,11 @@ export async function getCurrentUser(): Promise<{ session: any; profile: UserPro
   return { session, profile };
 }
 
-
-
-
 export async function signOut() {
   if (!isSupabaseConfigured) return;
   const supabase = createBrowserSupabaseClient();
   await supabase.auth.signOut();
 }
-
-
-
 
 export async function signIn(email: string, password: string) {
   if (!isSupabaseConfigured) throw new Error('Supabase not configured');
@@ -60,57 +46,18 @@ export async function signIn(email: string, password: string) {
   return data;
 }
 
-
-
-
 export async function signUp(email: string, password: string, name: string, role: 'PATIENT' | 'CAREGIVER' | 'DOCTOR', phone?: string) {
-  if (!isSupabaseConfigured) throw new Error('Supabase not configured');
-  const supabase = createBrowserSupabaseClient();
-  
-  const { data, error } = await supabase.auth.signUp({ email, password });
-  if (error) throw error;
-  if (!data.user) throw new Error('Signup failed — no user returned');
-
-  
-  const { error: profileError } = await supabase.from('profiles').insert({
-    user_id: data.user.id,
-    name,
-    role,
-    phone: phone || null,
-    streak: 0,
-    streak_history: [false, false, false, false, false, false, false],
+  const res = await fetch('/api/auth/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, name, role, phone }),
   });
-  if (profileError) throw profileError;
-
-  
-  // Seeding: if the user is a Patient, insert default tracking tables (medications list, hydration metrics, refills tracker).
-  if (role === 'PATIENT') {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('user_id', data.user.id)
-      .single();
-
-    if (profile) {
-      await supabase.from('medications').insert([
-        { profile_id: profile.id, name: 'Aspirin 81mg', icon: '💊', color: '#e84a5f', time: '08:00 AM', requires_lock: false, icon_bg: '#2a0f14' },
-        { profile_id: profile.id, name: 'Vitamin D 1000IU', icon: '☀️', color: '#f59e0b', time: '10:00 AM', requires_lock: false, icon_bg: '#2a1f0a' },
-        { profile_id: profile.id, name: 'Metformin 500mg', icon: '🔵', color: '#3b82f6', time: '02:00 PM', requires_lock: true, icon_bg: '#0a1530' },
-        { profile_id: profile.id, name: 'Lisinopril 10mg', icon: '⚙️', color: '#8b5cf6', time: '08:00 PM', requires_lock: false, icon_bg: '#1a1030' },
-      ]);
-      await supabase.from('hydration').insert({ profile_id: profile.id, current: 0, goal: 2.5 });
-      await supabase.from('refills').insert({ profile_id: profile.id, pending: 0 });
-    }
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error(json.error || 'Signup failed');
   }
-
-  return data;
+  return json;
 }
-
-
-
-
-
-
 
 export function extractToken(request: Request): string | null {
   const authHeader = request.headers.get('authorization');

@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import { addHydration } from '../../../../lib/db';
 
-import { extractToken } from '../../../../lib/auth';
+import { extractToken } from '../../../../lib/authServer';
 
 export async function POST(request: Request) {
   try {
@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     if (amount === undefined || amount === null) {
       return NextResponse.json({ error: 'Hydration amount is required' }, { status: 400 });
     }
-    const token = extractToken(request);
+    const token = await extractToken(request);
     // Parse client token and increment hydration status before returning updated metrics.
     // If the water amount is already merged or is zero, it executes as a safe HTTP 200 no-op,
     // allowing the client offline queue replay manager to clear the duplicate request.

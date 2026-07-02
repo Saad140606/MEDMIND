@@ -1,7 +1,7 @@
 // API endpoint matching speech input against user medications, intent-mapping commands, and executing actions using Gemini.
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { extractToken } from '../../../../lib/auth';
+import { extractToken } from '../../../../lib/authServer';
 import { getCurrentProfileId, getPatientMedications, logDose } from '../../../../lib/db';
 import { isSupabaseConfigured } from '../../../../lib/supabaseClient';
 import type { Medication } from '../../../../lib/db';
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
   let token: string | null = null;
 
   try {
-    token = extractToken(request);
+    token = await extractToken(request);
     if (isSupabaseConfigured && token) {
       profileId = await getCurrentProfileId(token);
       if (profileId) {

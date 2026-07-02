@@ -1,7 +1,7 @@
 // API endpoint letting caregivers/doctors submit user connection requests and automatically post consent notifications to patients.
 import { NextResponse } from 'next/server';
 import { isSupabaseConfigured, createAuthenticatedClient } from '../../../../lib/supabaseClient';
-import { extractToken } from '../../../../lib/auth';
+import { extractToken } from '../../../../lib/authServer';
 import { getCurrentProfileId } from '../../../../lib/db';
 
 export async function POST(request: Request) {
@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Connection requests require Supabase configuration' }, { status: 503 });
   }
 
-  const token = extractToken(request);
+  const token = await extractToken(request);
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const client = createAuthenticatedClient(token);
@@ -31,9 +31,11 @@ export async function POST(request: Request) {
   
   
   // Execute a Postgres RPC database function to search profiles safely by email address.
-  const { data: patientProfile, error: searchError } = await client
+  const { data: patientProfileData, error: searchError } = await client
     .rpc('get_profile_by_email', { p_email: patientEmail })
     .maybeSingle();
+
+  const patientProfile = patientProfileData as any;
 
   if (searchError || !patientProfile) {
     return NextResponse.json({ error: 'Patient not found with that email. They must have a MedMind account.' }, { status: 404 });
@@ -58,11 +60,15 @@ export async function POST(request: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     // Send visual consent request notification alert to the target patient profile.
-    await client.from('notifications').insert({
-      recipient_profile_id: patientProfile.id,
-      type: 'CONNECTION_REQUEST',
-      payload: { from_profile_id: myProfileId, from_name: myProfile.role, connection_type: 'CAREGIVER' },
-    }).catch(() => null);
+    try {
+      await client.from('notifications').insert({
+        recipient_profile_id: patientProfile.id,
+        type: 'CONNECTION_REQUEST',
+        payload: { from_profile_id: myProfileId, from_name: myProfile.role, connection_type: 'CAREGIVER' },
+      });
+    } catch {
+      // ignore
+    }
 
     return NextResponse.json({ success: true, message: 'Connection request sent to patient' });
   }
@@ -76,11 +82,15 @@ export async function POST(request: Request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    await client.from('notifications').insert({
-      recipient_profile_id: patientProfile.id,
-      type: 'CONNECTION_REQUEST',
-      payload: { from_profile_id: myProfileId, from_name: myProfile.role, connection_type: 'DOCTOR' },
-    }).catch(() => null);
+    try {
+      await client.from('notifications').insert({
+        recipient_profile_id: patientProfile.id,
+        type: 'CONNECTION_REQUEST',
+        payload: { from_profile_id: myProfileId, from_name: myProfile.role, connection_type: 'DOCTOR' },
+      });
+    } catch {
+      // ignore
+    }
 
     return NextResponse.json({ success: true, message: 'Connection request sent to patient' });
   }

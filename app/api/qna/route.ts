@@ -1,7 +1,7 @@
 // API endpoint forwarding user questions and medication context to the Google Gemini model for medical guidance.
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { extractToken } from '../../../lib/auth';
+import { extractToken } from '../../../lib/authServer';
 import { getCurrentProfileId, getPatientMedications } from '../../../lib/db';
 import { isSupabaseConfigured } from '../../../lib/supabaseClient';
 
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   let medContext = '';
   try {
     if (isSupabaseConfigured) {
-      const token = extractToken(request);
+      const token = await extractToken(request);
       const profileId = await getCurrentProfileId(token);
       if (profileId) {
         // Retrieve patient's medications list to build context for generative model parameters.

@@ -1,7 +1,7 @@
 // API endpoint compiling medication schedules, adherence metrics, and missed doses of active patients linked to a caregiver.
 import { NextResponse } from 'next/server';
 import { isSupabaseConfigured, createAuthenticatedClient } from '../../../../lib/supabaseClient';
-import { extractToken } from '../../../../lib/auth';
+import { extractToken } from '../../../../lib/authServer';
 import { getCurrentProfileId, getMedicationStatus } from '../../../../lib/db';
 import { computeMissed, computeAdherence } from '../../../../lib/adherence';
 import type { Medication, DoseLog } from '../../../../lib/db';
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Requires Supabase configuration', requiresSupabase: true }, { status: 503 });
   }
 
-  const token = extractToken(request);
+  const token = await extractToken(request);
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const client = createAuthenticatedClient(token);

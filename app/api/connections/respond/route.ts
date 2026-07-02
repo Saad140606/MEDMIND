@@ -1,7 +1,7 @@
 // API endpoint resolving pending connection invites, enabling patients to approve or revoke linked caregiver/doctor access.
 import { NextResponse } from 'next/server';
 import { isSupabaseConfigured, createAuthenticatedClient } from '../../../../lib/supabaseClient';
-import { extractToken } from '../../../../lib/auth';
+import { extractToken } from '../../../../lib/authServer';
 import { getCurrentProfileId } from '../../../../lib/db';
 
 export async function POST(request: Request) {
@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Requires Supabase configuration' }, { status: 503 });
   }
 
-  const token = extractToken(request);
+  const token = await extractToken(request);
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const client = createAuthenticatedClient(token);

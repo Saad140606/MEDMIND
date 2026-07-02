@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import { logDose } from '../../../../lib/db';
 
-import { extractToken } from '../../../../lib/auth';
+import { extractToken } from '../../../../lib/authServer';
 
 export async function POST(request: Request) {
   try {
@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     if (medicationId === undefined || medicationId === null) {
       return NextResponse.json({ error: 'Medication ID is required' }, { status: 400 });
     }
-    const token = extractToken(request);
+    const token = await extractToken(request);
     // Parse token and record logged medication intake parameters before returning dashboard stats.
     // If the dose was already logged for today, this performs a safe no-op returning HTTP 200,
     // which allows the client offline queue synchronizer to clear the duplicate request from its store.
