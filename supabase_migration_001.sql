@@ -1,6 +1,3 @@
--- Migration script extending user profiles, establishing doctor/caregiver relationships, and setting up auth-scoped RLS policies.
-
--- Only delete records with null user_id if the column already exists
 DO $$
 BEGIN
   IF EXISTS (
