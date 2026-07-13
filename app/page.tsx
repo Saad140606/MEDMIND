@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Bell, ChevronRight, Lock, Droplets, RefreshCw, Flame, Loader2,
-  LogOut, Check, X, ShieldAlert, ArrowRight, UserCheck
+  LogOut, Check, X, ShieldAlert, ArrowRight, UserCheck, Pencil, Trash2
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -13,6 +13,7 @@ import { isSupabaseConfigured } from "@/lib/supabaseClient";
 interface Medication {
   id: number;
   name: string;
+  dosage: string;
   icon: string;
   color: string;
   time: string;
@@ -72,6 +73,42 @@ function AdherenceRing({ percent }: { percent: number }) {
   );
 }
 
+const COLOR_OPTIONS = [
+  { color: '#e84a5f', bg: '#2a0f14', label: 'Red' },
+  { color: '#f59e0b', bg: '#2a1f0a', label: 'Amber' },
+  { color: '#3b82f6', bg: '#0a1530', label: 'Blue' },
+  { color: '#8b5cf6', bg: '#1a1030', label: 'Purple' },
+  { color: '#10b981', bg: '#0a2a1a', label: 'Green' }
+];
+
+const ICON_OPTIONS = ['💊', '☀️', '🔵', '⚙️', '🧪', '🩹', '🌿', '💧'];
+
+function convert24to12(time24: string): string {
+  if (!time24) return "";
+  const [hStr, mStr] = time24.split(":");
+  let hours = parseInt(hStr, 10);
+  const minutes = mStr;
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12;
+  hours = hours ? hours : 12; // 0 should be 12
+  const hoursStr = hours < 10 ? "0" + hours : "" + hours;
+  return `${hoursStr}:${minutes} ${ampm}`;
+}
+
+function convert12to24(time12: string): string {
+  if (!time12) return "";
+  const parts = time12.split(" ");
+  if (parts.length < 2) return "";
+  const time = parts[0];
+  const ampm = parts[1];
+  let [hours, minutes] = time.split(":").map(Number);
+  if (ampm === "PM" && hours < 12) hours += 12;
+  if (ampm === "AM" && hours === 12) hours = 0;
+  const hoursStr = hours < 10 ? "0" + hours : "" + hours;
+  const minutesStr = minutes < 10 ? "0" + minutes : "" + minutes;
+  return `${hoursStr}:${minutesStr}`;
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -81,6 +118,106 @@ export default function Dashboard() {
   const [doctorLinks, setDoctorLinks] = useState<ConnectionRequest[]>([]);
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const router = useRouter();
+
+  // Medication Form states
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formName, setFormName] = useState("");
+  const [formDosage, setFormDosage] = useState("");
+  const [formTime, setFormTime] = useState("");
+  const [formRequiresLock, setFormRequiresLock] = useState(false);
+  const [formIcon, setFormIcon] = useState("💊");
+  const [formColor, setFormColor] = useState("#3b82f6");
+  const [editingMedId, setEditingMedId] = useState<number | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const openAddModal = () => {
+    setEditingMedId(null);
+    setFormName("");
+    setFormDosage("");
+    setFormTime("");
+    setFormRequiresLock(false);
+    setFormIcon("💊");
+    setFormColor("#3b82f6");
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (med: Medication) => {
+    setEditingMedId(med.id);
+    setFormName(med.name);
+    setFormDosage(med.dosage || "");
+    setFormTime(convert12to24(med.time));
+    setFormRequiresLock(med.requiresLock);
+    setFormIcon(med.icon || "💊");
+    setFormColor(med.color || "#3b82f6");
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteMedication = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this medication?")) return;
+    try {
+      const res = await fetch(`/api/dashboard/medications/${id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Failed to delete medication');
+      const updatedData = await res.json();
+      setData(updatedData);
+    } catch (err: any) {
+      alert(err.message || 'Delete failed');
+    }
+  };
+
+  const handleSubmitMedication = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formName.trim() || !formDosage.trim() || !formTime) {
+      alert("Name, dosage, and time are required");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const time12 = convert24to12(formTime);
+      const matchedColor = COLOR_OPTIONS.find(c => c.color === formColor);
+      const iconBg = matchedColor ? matchedColor.bg : "#0a1530";
+
+      const payload = {
+        name: formName,
+        dosage: formDosage,
+        time: time12,
+        requiresLock: formRequiresLock,
+        icon: formIcon,
+        color: formColor,
+        iconBg,
+      };
+
+      const url = editingMedId !== null 
+        ? `/api/dashboard/medications/${editingMedId}` 
+        : '/api/dashboard/medications/add';
+      const method = editingMedId !== null ? 'PATCH' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error(editingMedId !== null ? 'Failed to update medication' : 'Failed to add medication');
+      
+      const updatedData = await res.json();
+      setData(updatedData);
+      setIsModalOpen(false);
+      setFormName("");
+      setFormDosage("");
+      setFormTime("");
+      setFormRequiresLock(false);
+      setFormIcon("💊");
+      setFormColor("#3b82f6");
+      setEditingMedId(null);
+    } catch (err: any) {
+      alert(err.message || 'Action failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const fetchConnections = useCallback(async () => {
     if (!isSupabaseConfigured) return;
@@ -418,27 +555,74 @@ export default function Dashboard() {
                   {med.icon}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontWeight: 600, fontSize: "14px", marginBottom: "4px" }}>{med.name}</p>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
+                    <p style={{ fontWeight: 600, fontSize: "14px" }}>{med.name}</p>
+                    {med.dosage && <span style={{ color: "var(--text-muted)", fontSize: "12px", fontWeight: 400 }}>({med.dosage})</span>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
                     <p style={{ color: "var(--text-muted)", fontSize: "12px" }}>{med.time}</p>
                     {status === "taken" && <span className="badge-taken">✓ TAKEN</span>}
                     {status === "due" && <span className="badge-due">⚡ DUE SOON</span>}
                     {status === "upcoming" && <span className="badge-upcoming">UPCOMING</span>}
                   </div>
                 </div>
-                {status === "due" ? (
-                  <button onClick={() => handleLogDose(med)} style={{ background: "var(--accent-green)", color: "#0d1a10", fontWeight: 700, fontSize: "11px", padding: "8px 12px", borderRadius: "10px", border: "none", cursor: "pointer", boxShadow: "0 0 14px var(--accent-green-glow)", flexShrink: 0, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "4px" }}>
-                    {med.requiresLock && <Lock size={10} />} LOG DOSE
+                <div style={{ display: "flex", gap: "8px", alignItems: "center", marginLeft: "auto", flexShrink: 0 }}>
+                  <button 
+                    onClick={() => openEditModal(med)} 
+                    style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    title="Edit Medication"
+                  >
+                    <Pencil size={14} />
                   </button>
-                ) : status === "upcoming" ? (
-                  <Lock size={16} color="var(--text-muted)" />
-                ) : (
-                  <ChevronRight size={16} color="var(--text-muted)" />
-                )}
+                  <button 
+                    onClick={() => handleDeleteMedication(med.id)} 
+                    style={{ background: "none", border: "none", color: "var(--accent-red)", cursor: "pointer", padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    title="Delete Medication"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                  {status === "due" ? (
+                    <button onClick={() => handleLogDose(med)} style={{ background: "var(--accent-green)", color: "#0d1a10", fontWeight: 700, fontSize: "11px", padding: "8px 12px", borderRadius: "10px", border: "none", cursor: "pointer", boxShadow: "0 0 14px var(--accent-green-glow)", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "4px" }}>
+                      {med.requiresLock && <Lock size={10} />} LOG DOSE
+                    </button>
+                  ) : status === "upcoming" ? (
+                    <div style={{ padding: "8px" }} title="Upcoming">
+                      <Lock size={14} color="var(--text-muted)" />
+                    </div>
+                  ) : (
+                    <div style={{ padding: "8px" }} title="Taken">
+                      <Check size={14} color="var(--accent-green)" />
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
+        <button 
+          onClick={openAddModal}
+          style={{
+            width: "100%",
+            marginTop: "12px",
+            background: "rgba(57,255,158,0.06)",
+            border: "1px dashed var(--accent-green)",
+            borderRadius: "12px",
+            padding: "12px",
+            color: "var(--accent-green)",
+            fontWeight: 700,
+            fontSize: "13px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            transition: "background 0.2s"
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = "rgba(57,255,158,0.12)"}
+          onMouseLeave={(e) => e.currentTarget.style.background = "rgba(57,255,158,0.06)"}
+        >
+          + Add Medication
+        </button>
       </div>
 
       {/* Quick Tiles */}
@@ -477,6 +661,210 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {isModalOpen && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(10, 11, 22, 0.85)",
+          backdropFilter: "blur(8px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+          padding: "20px"
+        }}>
+          <div style={{
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border)",
+            borderRadius: "20px",
+            width: "100%",
+            maxWidth: "420px",
+            padding: "24px",
+            boxShadow: "0 20px 40px rgba(0, 0, 0, 0.4)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "18px"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: 800 }}>
+                {editingMedId !== null ? "Edit Medication" : "Add Medication"}
+              </h3>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitMedication} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.05em" }}>MEDICATION NAME</label>
+                <input 
+                  type="text" 
+                  value={formName} 
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="e.g. Aspirin, Vitamin D" 
+                  required
+                  style={{
+                    background: "var(--bg-surface2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "10px",
+                    padding: "10px 12px",
+                    color: "var(--text-primary)",
+                    fontSize: "14px",
+                    outline: "none"
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.05em" }}>DOSAGE</label>
+                <input 
+                  type="text" 
+                  value={formDosage} 
+                  onChange={(e) => setFormDosage(e.target.value)}
+                  placeholder="e.g. 81mg, 1 tablet, 5ml" 
+                  required
+                  style={{
+                    background: "var(--bg-surface2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "10px",
+                    padding: "10px 12px",
+                    color: "var(--text-primary)",
+                    fontSize: "14px",
+                    outline: "none"
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.05em" }}>SCHEDULED TIME</label>
+                <input 
+                  type="time" 
+                  value={formTime} 
+                  onChange={(e) => setFormTime(e.target.value)}
+                  required
+                  style={{
+                    background: "var(--bg-surface2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "10px",
+                    padding: "10px 12px",
+                    color: "var(--text-primary)",
+                    fontSize: "14px",
+                    outline: "none",
+                    width: "100%"
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <input 
+                  type="checkbox" 
+                  id="requiresLock"
+                  checked={formRequiresLock}
+                  onChange={(e) => setFormRequiresLock(e.target.checked)}
+                  style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent-green)" }}
+                />
+                <label htmlFor="requiresLock" style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer" }}>
+                  Requires Puzzle Lock to log dose
+                </label>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.05em" }}>CHOOSE ICON</label>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {ICON_OPTIONS.map(icon => (
+                    <button
+                      key={icon}
+                      type="button"
+                      onClick={() => setFormIcon(icon)}
+                      style={{
+                        fontSize: "20px",
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "8px",
+                        background: formIcon === icon ? "var(--bg-surface2)" : "transparent",
+                        border: formIcon === icon ? "2px solid var(--accent-green)" : "1px solid var(--border)",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}
+                    >
+                      {icon}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", letterSpacing: "0.05em" }}>CHOOSE COLOR</label>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  {COLOR_OPTIONS.map(item => (
+                    <button
+                      key={item.color}
+                      type="button"
+                      onClick={() => setFormColor(item.color)}
+                      style={{
+                        width: "28px",
+                        height: "28px",
+                        borderRadius: "50%",
+                        backgroundColor: item.color,
+                        border: formColor === item.color ? "3px solid #fff" : "none",
+                        cursor: "pointer",
+                        boxShadow: "0 0 8px rgba(0,0,0,0.3)"
+                      }}
+                      title={item.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                <button 
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  style={{
+                    flex: 1,
+                    background: "var(--bg-surface2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "12px",
+                    padding: "12px",
+                    color: "var(--text-secondary)",
+                    fontWeight: 700,
+                    cursor: "pointer"
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="btn-green"
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px"
+                  }}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" /> Saving...
+                    </>
+                  ) : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

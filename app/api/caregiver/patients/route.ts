@@ -61,6 +61,7 @@ export async function GET(request: Request) {
       const medications: Medication[] = rawMeds.map((m: any) => ({
         id: m.id,
         name: m.name,
+        dosage: m.dosage || '',
         icon: m.icon,
         color: m.color,
         time: m.time,

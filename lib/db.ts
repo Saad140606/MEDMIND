@@ -8,6 +8,7 @@ import { supabase, isSupabaseConfigured, createAuthenticatedClient } from './sup
 export interface Medication {
   id: number;
   name: string;
+  dosage: string;
   icon: string;
   color: string;
   time: string;
@@ -61,10 +62,10 @@ const DEFAULT_STATE: DatabaseState = {
     streakHistory: [true, true, true, true, true, false, false],
   },
   medications: [
-    { id: 1, name: 'Aspirin 81mg',      icon: '💊', color: '#e84a5f', time: '08:00 AM', status: 'taken',    iconBg: '#2a0f14', requiresLock: false },
-    { id: 2, name: 'Vitamin D 1000IU',  icon: '☀️', color: '#f59e0b', time: '10:00 AM', status: 'taken',    iconBg: '#2a1f0a', requiresLock: false },
-    { id: 3, name: 'Metformin 500mg',   icon: '🔵', color: '#3b82f6', time: '02:00 PM', status: 'due',      iconBg: '#0a1530', requiresLock: true  },
-    { id: 4, name: 'Lisinopril 10mg',   icon: '⚙️', color: '#8b5cf6', time: '08:00 PM', status: 'upcoming', iconBg: '#1a1030', requiresLock: false },
+    { id: 1, name: 'Aspirin 81mg',      dosage: '81mg',      icon: '💊', color: '#e84a5f', time: '08:00 AM', status: 'taken',    iconBg: '#2a0f14', requiresLock: false },
+    { id: 2, name: 'Vitamin D 1000IU',  dosage: '1000IU',    icon: '☀️', color: '#f59e0b', time: '10:00 AM', status: 'taken',    iconBg: '#2a1f0a', requiresLock: false },
+    { id: 3, name: 'Metformin 500mg',   dosage: '500mg',     icon: '🔵', color: '#3b82f6', time: '02:00 PM', status: 'due',      iconBg: '#0a1530', requiresLock: true  },
+    { id: 4, name: 'Lisinopril 10mg',   dosage: '10mg',      icon: '⚙️', color: '#8b5cf6', time: '08:00 PM', status: 'upcoming', iconBg: '#1a1030', requiresLock: false },
   ],
   hydration: { current: 1.2, goal: 2.5 },
   refills: { pending: 2 },
@@ -157,6 +158,7 @@ function mapDbMed(med: any, logs: any[], todayStr: string): Medication {
   return {
     id: med.id,
     name: med.name,
+    dosage: med.dosage || '',
     icon: med.icon,
     color: med.color,
     time: med.time,
@@ -342,6 +344,141 @@ export async function addHydration(amountLiters: number, accessToken?: string | 
 
   const db = await ensureDb();
   db.hydration.current = Math.min(db.hydration.goal, parseFloat((db.hydration.current + amountLiters).toFixed(2)));
+  await saveDb(db);
+  return getDashboardData();
+}
+
+export async function addMedication(
+  med: {
+    name: string;
+    dosage: string;
+    time: string;
+    icon?: string;
+    color?: string;
+    iconBg?: string;
+    requiresLock?: boolean;
+  },
+  accessToken?: string | null
+) {
+  const { name, dosage, time, icon, color, iconBg, requiresLock } = med;
+  if (isSupabaseConfigured) {
+    const client = getSupabaseClient(accessToken);
+    if (!client) throw new Error('Supabase client unavailable');
+
+    const profileId = await getCurrentProfileId(accessToken);
+    if (!profileId) throw new Error('Profile not found');
+
+    const { error } = await client.from('medications').insert({
+      profile_id: profileId,
+      name,
+      dosage,
+      time,
+      icon: icon || '💊',
+      color: color || '#3b82f6',
+      icon_bg: iconBg || '#0a1530',
+      requires_lock: requiresLock ?? false,
+    });
+
+    if (error) throw error;
+    return getDashboardData(accessToken);
+  }
+
+  const db = await ensureDb();
+  const nextId = db.medications.length > 0 ? Math.max(...db.medications.map(m => m.id)) + 1 : 1;
+  db.medications.push({
+    id: nextId,
+    name,
+    dosage,
+    icon: icon || '💊',
+    color: color || '#3b82f6',
+    time,
+    status: 'upcoming',
+    iconBg: iconBg || '#0a1530',
+    requiresLock: requiresLock ?? false,
+  });
+  await saveDb(db);
+  return getDashboardData();
+}
+
+export async function updateMedication(
+  id: number,
+  med: {
+    name?: string;
+    dosage?: string;
+    time?: string;
+    requiresLock?: boolean;
+    icon?: string;
+    color?: string;
+    iconBg?: string;
+  },
+  accessToken?: string | null
+) {
+  if (isSupabaseConfigured) {
+    const client = getSupabaseClient(accessToken);
+    if (!client) throw new Error('Supabase client unavailable');
+
+    const profileId = await getCurrentProfileId(accessToken);
+    if (!profileId) throw new Error('Profile not found');
+
+    const updates: any = {};
+    if (med.name !== undefined) updates.name = med.name;
+    if (med.dosage !== undefined) updates.dosage = med.dosage;
+    if (med.time !== undefined) updates.time = med.time;
+    if (med.requiresLock !== undefined) updates.requires_lock = med.requiresLock;
+    if (med.icon !== undefined) updates.icon = med.icon;
+    if (med.color !== undefined) updates.color = med.color;
+    if (med.iconBg !== undefined) updates.icon_bg = med.iconBg;
+
+    const { error } = await client
+      .from('medications')
+      .update(updates)
+      .eq('id', id)
+      .eq('profile_id', profileId);
+
+    if (error) throw error;
+    return getDashboardData(accessToken);
+  }
+
+  const db = await ensureDb();
+  const index = db.medications.findIndex(m => m.id === id);
+  if (index !== -1) {
+    const existing = db.medications[index];
+    db.medications[index] = {
+      ...existing,
+      name: med.name !== undefined ? med.name : existing.name,
+      dosage: med.dosage !== undefined ? med.dosage : existing.dosage,
+      time: med.time !== undefined ? med.time : existing.time,
+      requiresLock: med.requiresLock !== undefined ? med.requiresLock : existing.requiresLock,
+      icon: med.icon !== undefined ? med.icon : existing.icon,
+      color: med.color !== undefined ? med.color : existing.color,
+      iconBg: med.iconBg !== undefined ? med.iconBg : existing.iconBg,
+    };
+    await saveDb(db);
+  }
+  return getDashboardData();
+}
+
+export async function deleteMedication(id: number, accessToken?: string | null) {
+  if (isSupabaseConfigured) {
+    const client = getSupabaseClient(accessToken);
+    if (!client) throw new Error('Supabase client unavailable');
+
+    const profileId = await getCurrentProfileId(accessToken);
+    if (!profileId) throw new Error('Profile not found');
+
+    const { error } = await client
+      .from('medications')
+      .delete()
+      .eq('id', id)
+      .eq('profile_id', profileId);
+
+    if (error) throw error;
+    return getDashboardData(accessToken);
+  }
+
+  const db = await ensureDb();
+  db.medications = db.medications.filter(m => m.id !== id);
+  db.logs = db.logs.filter(l => l.medicationId !== id);
   await saveDb(db);
   return getDashboardData();
 }

@@ -55,10 +55,10 @@ export async function POST(request: Request) {
       try {
         await Promise.all([
           supabaseAdmin.from('medications').insert([
-            { profile_id: profile.id, name: 'Aspirin 81mg', icon: '💊', color: '#e84a5f', time: '08:00 AM', requires_lock: false, icon_bg: '#2a0f14' },
-            { profile_id: profile.id, name: 'Vitamin D 1000IU', icon: '☀️', color: '#f59e0b', time: '10:00 AM', requires_lock: false, icon_bg: '#2a1f0a' },
-            { profile_id: profile.id, name: 'Metformin 500mg', icon: '🔵', color: '#3b82f6', time: '02:00 PM', requires_lock: true, icon_bg: '#0a1530' },
-            { profile_id: profile.id, name: 'Lisinopril 10mg', icon: '⚙️', color: '#8b5cf6', time: '08:00 PM', requires_lock: false, icon_bg: '#1a1030' },
+            { profile_id: profile.id, name: 'Aspirin 81mg', dosage: '81mg', icon: '💊', color: '#e84a5f', time: '08:00 AM', requires_lock: false, icon_bg: '#2a0f14' },
+            { profile_id: profile.id, name: 'Vitamin D 1000IU', dosage: '1000IU', icon: '☀️', color: '#f59e0b', time: '10:00 AM', requires_lock: false, icon_bg: '#2a1f0a' },
+            { profile_id: profile.id, name: 'Metformin 500mg', dosage: '500mg', icon: '🔵', color: '#3b82f6', time: '02:00 PM', requires_lock: true, icon_bg: '#0a1530' },
+            { profile_id: profile.id, name: 'Lisinopril 10mg', dosage: '10mg', icon: '⚙️', color: '#8b5cf6', time: '08:00 PM', requires_lock: false, icon_bg: '#1a1030' },
           ]),
           supabaseAdmin.from('hydration').insert({ profile_id: profile.id, current: 0, goal: 2.5 }),
           supabaseAdmin.from('refills').insert({ profile_id: profile.id, pending: 0 })
